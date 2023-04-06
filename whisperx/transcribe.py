@@ -4,7 +4,7 @@ import warnings
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 import numpy as np
 import torch
-import tempfile 
+import tempfile
 import ffmpeg
 from whisper.tokenizer import LANGUAGES, TO_LANGUAGE_CODE
 from whisper.audio import SAMPLE_RATE
@@ -19,6 +19,7 @@ from .asr import transcribe, transcribe_with_vad
 from .diarize import DiarizationPipeline, assign_word_speakers
 from .utils import get_writer
 from .vad import load_vad_model
+
 
 def cli():
     from whisper import available_models
@@ -109,13 +110,16 @@ def cli():
     if vad_filter:
         from pyannote.audio import Pipeline
         from pyannote.audio import Model, Pipeline
+
         vad_model = load_vad_model(torch.device(device), vad_onset, vad_offset, use_auth_token=hf_token)
     else:
         vad_model = None
 
     if diarize:
         if hf_token is None:
-            print("Warning, no --hf_token used, needs to be saved in environment variable, otherwise will throw error loading diarization model...")
+            print(
+                "Warning, no --hf_token used, needs to be saved in environment variable, otherwise will throw error loading diarization model..."
+            )
         diarize_model = DiarizationPipeline(use_auth_token=hf_token)
     else:
         diarize_model = None
@@ -123,14 +127,17 @@ def cli():
     if no_align:
         align_model, align_metadata = None, None
     else:
-        align_language = args["language"] if args["language"] is not None else "en" # default to loading english if not specified
-        align_model, align_metadata = load_align_model(align_language, device, model_name=align_model)     
+        align_language = (
+            args["language"] if args["language"] is not None else "en"
+        )  # default to loading english if not specified
+        align_model, align_metadata = load_align_model(
+            align_language, device, model_name="jonatasgrosman/wav2vec2-large-xlsr-53-russian"
+        )
 
     # if model_flush:
     #     print(">>Model flushing activated... Only loading model after ASR stage")
     #     del align_model
     #     align_model = ""
-
 
     if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
         if args["language"] is not None:
@@ -178,11 +185,25 @@ def cli():
         if align_model is not None and len(result["segments"]) > 0:
             if result.get("language", "en") != align_metadata["language"]:
                 # load new language
-                print(f"New language found ({result['language']})! Previous was ({align_metadata['language']}), loading new alignment model for new language...")
+                print(
+                    f"New language found ({result['language']})! Previous was ({align_metadata['language']}), loading new alignment model for new language..."
+                )
                 align_model, align_metadata = load_align_model(result["language"], device)
             print(">>Performing alignment...")
-            result = align(result["segments"], align_model, align_metadata, input_audio_path, device,
-                extend_duration=align_extend, start_from_previous=align_from_prev, interpolate_method=interpolate_method)
+            import pickle
+
+            with open("tmp.pkl", "w") as f:
+                pickle.dump(f, result["segments"])
+            result = align(
+                result["segments"],
+                align_model,
+                align_metadata,
+                input_audio_path,
+                device,
+                extend_duration=align_extend,
+                start_from_previous=align_from_prev,
+                interpolate_method=interpolate_method,
+            )
 
         # >> Diarize
         if diarize_model is not None:
@@ -190,12 +211,12 @@ def cli():
             results_segments, word_segments = assign_word_speakers(diarize_segments, result["segments"])
             result = {"segments": results_segments, "word_segments": word_segments}
 
-
         writer(result, audio_path)
 
         # cleanup
         if input_audio_path != audio_path:
             os.remove(input_audio_path)
+
 
 if __name__ == "__main__":
     cli()
